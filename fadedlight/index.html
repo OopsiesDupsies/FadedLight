@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Faded Light</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display L=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            font-family: 'Cormorant Garamond', serif;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: none;
+        }
+        #gameCanvas {
+            display: block;
+            background-color: #000000;
+            transition: background-color 5s ease-in-out;
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            pointer-events: none;
+            transition: opacity 2.5s ease-in-out;
+        }
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .text-container {
+            transition: opacity 2.5s ease-in-out;
+        }
+        h1 {
+            font-size: 2.8em;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+            margin: 0;
+            font-style: italic;
+        }
+        p {
+            font-size: 1.4em;
+            margin-top: 20px;
+            max-width: 600px;
+            font-weight: 300;
+            line-height: 1.5;
+        }
+        #startInstruction {
+            position: absolute;
+            bottom: 40px;
+            font-size: 1.1em;
+            letter-spacing: 0.05em;
+            animation: fadeInOut 4s infinite;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        #credits {
+    position: absolute;
+    bottom: 40px;
+    right: 40px;
+    text-align: right;
+}
+.credit-title {
+    font-size: 2.2em; /* This is your larger, primary font */
+    font-style: italic;
+    margin: 0;
+}
+.credit-author {
+    font-size: 1.1em; /* This is the smaller font */
+    opacity: 0.7;
+    margin: 0;
+    margin-top: 5px;
+}
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="overlay">
+        <div id="titleScreen" class="text-container">
+            <h1>Faded Light</h1>
+            <p id="dedication">In search of lost radiance.</p>
+            <p id="startInstruction">Click to begin</p>
+        </div>
+        <div id="storyScreen" class="text-container hidden">
+            <h1 id="storyTitle"></h1>
+            <p id="storySubtitle"></p>
+        </div>
+
+        <div id="credits" class="text-container hidden">
+            <p class="credit-title">Faded Light</p>
+            <p class="credit-author">- by Mate Phochkhua.</p>
+        </div>
+    </div>
+
+    <script>
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const titleScreen = document.getElementById('titleScreen');
+        const storyScreen = document.getElementById('storyScreen');
+        const storyTitle = document.getElementById('storyTitle');
+        const storySubtitle = document.getElementById('storySubtitle');
+        const credits = document.getElementById('credits');
+
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        let mouse = { x: width / 2, y: height / 2, moved: false };
+        let gameState = 'title';
+
+        // --- Game Objects ---
+        const player = {
+            x: width / 2, y: height / 2, radius: 8, color: '#FFFFFF',
+            targetX: width / 2, targetY: height / 2, speed: 0.04, flicker: 0
+        };
+        const partner = {
+            x: -200, y: -200, radius: 7, color: 'rgba(255, 179, 186, 0.8)',
+            targetX: width / 2, targetY: height / 2, speed: 0.02, wanderAngle: 0, trust: 0
+        };
+        // object for the prologue
+        const dark = { x: width - 100, y: height - 100, radius: 60, color: '#000000', pull: 0.15 };
+
+        let fragments = [];
+        let particles = [];
+        let backgroundDust = [];
+        let constellations = [];
+        let centralSun = { x: width/2, y: height/2, radius: 0, alpha: 0 };
+        let time = 0;
+        let creditsShown = false;
+        let act2HintTimer = 0;
+
+        // --- Setup ---
+        function init() {
+            for (let i = 0; i < 100; i++) {
+                backgroundDust.push({
+                    x: Math.random() * width, y: Math.random() * height,
+                    radius: Math.random() * 0.8,
+                    alpha: Math.random() * 0.1
+                });
+            }
+            loop();
+        }
+
+        // --- Game Flow & Story ---
+        function showStoryScreen(title, subtitle, duration, nextStateCallback) {
+            storyTitle.innerHTML = title;
+            storySubtitle.innerHTML = subtitle;
+            storyScreen.classList.remove('hidden');
+            setTimeout(() => {
+                storyScreen.classList.add('hidden');
+                if(nextStateCallback) setTimeout(nextStateCallback, 2500);
+            }, duration);
+        }
+
+        // This function now starts the NEW prologue
+function startGame() {
+    if (gameState !== 'title') return;
+    gameState = 'starting';
+
+    // 1. This line starts the fade-out of the title screen.
+    titleScreen.classList.add('hidden');
+
+    // 2. :  wait 2500ms (2.5 seconds) for the fade-out to complete.
+    setTimeout(() => {
+        // 3. ONLY after the screen is black,  run the rest of the setup.
+        
+        // Setup for the prologue
+        canvas.style.backgroundColor = '#0a0a1a';
+        player.x = width / 2; player.y = height / 2;
+        partner.x = width * 0.6; partner.y = height * 0.4; // Position Pink orb
+        partner.alpha = 1.0; // Make sure she is visible
+        dark.x = width - 100; dark.y = height - 100;
+
+        // show the next text on the already-black screen.
+        showStoryScreen(
+            `A Shadow Fell`,
+            `There was a pull It could not fight. Only delay.`,
+            5000,
+            () => {
+                gameState = 'prologue';
+            }
+        );
+    }, 2500); // This delay MUST match the CSS transition duration (2.5s)
+}
+
+
+function updatePrologue() {
+    // --- Background Darkening Logic ---
+    // 1. Define the starting color components (R, G, B for #0a0a1a)
+    const startColor = { r: 10, g: 10, b: 26 };
+    // 2. Define the range over which the fade will happen.
+    const fadeStartDistance = width / 2; // When the darkening begins
+    const fadeEndDistance = dark.radius;   // When it's fully black
+
+    // 3. Calculate  current progress from 1.0 (start) to 0.0 (end)
+    let distDark = Math.hypot(dark.x - partner.x, dark.y - partner.y);
+    let progress = (distDark - fadeEndDistance) / (fadeStartDistance - fadeEndDistance);
+    progress = Math.min(1, Math.max(0, progress)); // Clamp between 0 and 1
+
+    // 4. Calculate the new color based on progress
+    let r = Math.floor(startColor.r * progress);
+    let g = Math.floor(startColor.g * progress);
+    let b = Math.floor(startColor.b * progress);
+
+    // 5. Apply the new color to the background
+    canvas.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+
+
+    // --- Orb Pulling Logic ---
+    let pullForceX = 0, pullForceY = 0;
+    if (distDark > 1) {
+        pullForceX = (dark.x - partner.x) / distDark * dark.pull;
+        pullForceY = (dark.y - partner.y) / distDark * dark.pull;
+    }
+    partner.x += pullForceX;
+    partner.y += pullForceY;
+
+    let distPlayerHer = Math.hypot(player.x - partner.x, player.y - partner.y);
+    if (distPlayerHer < player.radius + partner.radius + 30) {
+        partner.x -= pullForceX;
+        partner.y -= pullForceY;
+        if(time % 4 === 0) createParticles(partner.x, partner.y, 'rgba(255,255,255,0.5)', 1, 1);
+    }
+    
+    drawOrb(partner);
+    drawOrb(dark, false, true);
+
+    if (distDark < dark.radius - partner.radius) {
+        transitionToOriginalAct1();
+    }
+}
+        // seamlessly transitions to the original game's first act
+        function transitionToOriginalAct1() {
+            gameState = 'interlude';
+            createParticles(partner.x, partner.y, 'black', 50, 4); // Burst of particles
+            partner.x = -500; // Move her offscreen
+            
+            // This is the starting text
+            showStoryScreen(
+                `And then... there was silence.`,
+                `A world of scattered echoes, waiting to be found.`,
+                4000,
+                () => {
+                    gameState = 'act1';// Move to act 1
+                    initAct1(); // This is the initAct1 function
+                }
+            );
+        }
+
+        function initAct1() {// Initialize fragments for Act 1
+            fragments = [];// Clear any existing fragments
+            for (let i = 0; i < 7; i++) {
+                fragments.push({// Create 7 fragments
+                    x: Math.random() * (width - 200) + 100, y: Math.random() * (height - 200) + 100,// Avoid edges
+                    radius: 15 + Math.random() * 15, isActivated: false, alpha: 0.15// Start very faint
+                });
+            }
+        }
+
+        // Inside transitionToAct2()
+function transitionToAct2() {
+    gameState = 'interlude1';
+    canvas.style.backgroundColor = '#0a0a1a'; // Deep blue
+    partner.alpha = 0.1; // Start very faint
+
+    showStoryScreen(
+        `A flicker in the distance.`,
+        `Not a memory, but something new. Something hoped for.`,
+        5000,
+        () => {
+            gameState = 'act2';// Move to act 2
+            partner.x = Math.random() > 0.5 ? width + 100 : -100;// Start offscreen left or right
+            partner.y = Math.random() * height;// Start offscreen
+            partner.trust = 0;
+            // alpha is already set, so it's removed from here
+            act2HintTimer = 0;
+            fragments.forEach(f => {
+                f.isActivated = false;// Reset activation
+                f.alpha = 0.2;// Reset fragments for potential reuse
+            });
+        }
+    );
+}
+        // Inside transitionToAct3()
+        function transitionToAct3() {
+    gameState = 'interlude2';// Move to interlude 2
+    canvas.style.backgroundColor = '#1a102a'; // Deep violet
+    showStoryScreen(// New text for this transition
+        `Patience taught them a new language.`,
+        `One spoken not with words, but with presence.`,
+        5000,
+        () => {
+            gameState = 'act3';// Move to act 3
+            constellations = [];// Clear old constellations
+            fragments = []; // Clear old fragments
+            partner.speed = 0.012;// Slow her down for this act
+
+            // Define 3 constellation patterns
+            const patterns = [// Each pattern is an array of relative positions (0.0 to 1.0)
+                [{x: 0.2, y: 0.3}, {x: 0.3, y: 0.5}, {x: 0.25, y: 0.7}],// Simple triangle pattern
+                [{x: 0.5, y: 0.2}, {x: 0.6, y: 0.4}, {x: 0.5, y: 0.6}, {x: 0.4, y: 0.4}],// Simple square pattern
+                [{x: 0.8, y: 0.7}, {x: 0.7, y: 0.5}, {x: 0.85, y: 0.3}]// Simple zig-zag patterns
+            ];
+
+            patterns.forEach((pattern, patternIndex) => {// For each constellation pattern
+                pattern.forEach((pos, nodeIndex) => {// For each position in the pattern
+                    constellations.push({// Add each star node
+                        x: pos.x * width, // Position based on screen size
+                        y: pos.y * height,// Position based on screen size
+                        radius: 3,// Small stars
+                        alpha: 0.3, // Start as faint dots
+                        isActivated: false,// for tracking activation
+                        isTarget: false,// for pulsing effect
+                        patternId: patternIndex,// for grouping
+                        nodeId: nodeIndex// for tracking order
+                    });
+                });
+            });
+
+            // Set the very first star as the first target
+            constellations[0].isTarget = true;
+        }
+    );
+}
+
+        function startEpilogue() {
+            gameState = 'epilogue';// Move to epilogue state
+            showStoryScreen(
+                `And in the quiet, they will find shared light.`,
+                `Not a memory relived, but a new universe made.`,
+                6000,
+                () => {
+                    gameState = 'end';// Move to end scene
+                }
+            );
+        }
+        // --- Main Loop ---
+
+        function loop() {
+            time++;
+            ctx.clearRect(0, 0, width, height);// Clear canvas
+
+            drawBackground();// Draw background dust
+
+// Add a dimming overlay for Act 2
+if (gameState === 'act2' || gameState === 'interlude1') {
+    // Dimness is the inverse of her brightness
+    let dimness = 1.0 - partner.alpha; // 0.0 (bright) to 1.0 (dark)
+    
+    // Draw a semi-transparent black rectangle over the scene
+    ctx.fillStyle = `rgba(0, 0, 0, ${dimness * 0.8})`;
+    ctx.fillRect(0, 0, width, height);// 0.8 is the max dimming factor
+}
+            updateAndDrawParticles();// Update and draw particles
+
+            if (gameState === 'title' && !mouse.moved) {
+                // waiting for user interaction
+            } else if (gameState !== 'title' && gameState !== 'starting' && !gameState.includes('interlude') && gameState !== 'end') {
+                 updatePlayer();// Update player position
+                 drawPlayer();//draw the player
+            }
+
+            // State-specific updates
+            if (gameState === 'prologue') updatePrologue();// Update prologue (dark orb)
+            else if (gameState === 'act1') updateAct1();// Update act 1 (fragments)
+            else if (gameState === 'act2') updateAct2();// Update act 2 (partner)
+            else if (gameState === 'act3') updateAct3();// Update act 3 (constellations)
+            else if (gameState === 'end') updateEndScene();// Update end scene
+            
+            requestAnimationFrame(loop);
+        }
+// --- Drawing Functions ---
+        function drawBackground() {
+            backgroundDust.forEach(d => {
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${d.alpha})`;
+                ctx.fill();
+            });
+        }
+        // --- Player & Orb Functions ---
+        function updatePlayer() {
+            player.targetX = mouse.x;
+            player.targetY = mouse.y;
+            player.x += (player.targetX - player.x) * player.speed;
+            player.y += (player.targetY - player.y) * player.speed;
+        }
+// --- Drawing Functions player ---
+        function drawPlayer() {
+            player.flicker = (Math.sin(time * 0.1) * 0.15) + 0.85; // 0.7 to 1.0
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius * player.flicker, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.shadowColor = player.color;
+            ctx.shadowBlur = 20;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+// Draw orb with optional shadow
+        function drawOrb(orb, isPlayer = false, hasShadow = false) {
+            ctx.globalAlpha = orb.alpha !== undefined ? orb.alpha : 1;
+            ctx.beginPath();
+            let radius = orb.radius;
+            if (isPlayer) radius *= orb.flicker; // flicker only for player
+            ctx.arc(orb.x, orb.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = orb.color;
+            
+            if (hasShadow) {
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = 40;
+                ctx.shadowOffsetX = 5;
+                ctx.shadowOffsetY = 5;
+            } else {
+                ctx.shadowColor = orb.color;
+                ctx.shadowBlur = 20;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+            }
+
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.globalAlpha = 1;
+        }
+        // --- Particle System ---
+        function updateAndDrawParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];// Get particle
+                p.x += p.vx;// Move particle
+                p.y += p.vy;
+                p.alpha -= 0.02;// Fade out
+                if (p.alpha <= 0) particles.splice(i, 1);// Remove dead particles
+                else {
+                    ctx.globalAlpha = p.alpha;// Set alpha for fade-out
+                    ctx.beginPath();// Start drawing particle
+                    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);// Draw particle
+                    ctx.fillStyle = p.color;
+                    ctx.fill();// Fill the particle
+                    ctx.globalAlpha = 1.0;// Reset alpha
+                }
+            }
+        }
+        // FUNCTION to create particles
+        
+        function createParticles(x, y, color, count, speed = 3) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x, y,
+                    vx: (Math.random() - 0.5) * speed, vy: (Math.random() - 0.5) * speed,
+                    radius: Math.random() * 2 + 1, alpha: 1, color 
+                });
+            }
+        }
+
+                // FUNCTION for click-sparks
+function createClickSparks() {
+    // only create sparks if the game is in an active playable state
+    if (gameState.includes('prologue') || gameState.includes('act')) {
+        createParticles(
+            player.x,               // Create sparks at the player's X position
+            player.y,               // Create sparks at the player's Y position
+            player.color,           // Make the sparks the same color as the player
+            Math.floor(Math.random() * 3) + 5, // Create 5 to 7 sparks for variety
+            2.5                     // Give them a gentle speed
+        );
+    }
+}
+// --- Act Update Functions ---
+        function updateAct1() {
+            let allActivated = true;// Flag to check if all fragments are activated
+            fragments.forEach(f => {
+                let dist = Math.hypot(player.x - f.x, player.y - f.y);// Distance from player to fragment
+                if (dist < player.radius + f.radius && !f.isActivated) {// Check collision
+                    f.isActivated = true;// Activate fragment
+                    createParticles(f.x, f.y, 'rgba(200, 200, 200, 0.5)', 10);// Sparkle effect
+                }
+                if (f.isActivated && f.alpha < 0.6) f.alpha += 0.005;// Fade in activated fragments
+                if (!f.isActivated) allActivated = false;// Check if all are activated
+                
+                ctx.beginPath();// Draw fragment
+                ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);// Draw circle
+                ctx.strokeStyle = `rgba(255, 255, 255, ${f.alpha * 0.5})`;// Faint outline
+                ctx.setLineDash([8, 8]);// Dashed line
+                ctx.stroke();// Draw dashed circle
+                ctx.setLineDash([]);// Reset dash
+            });
+
+            if (allActivated) transitionToAct2();// Move to next act
+        }
+        
+        function updateAct2() {
+
+                if (act2HintTimer !== null) { // use null to signal that the hint has been given
+        act2HintTimer++;
+        
+        // 180 frames is about 3 seconds (at 60fps)
+        if (act2HintTimer > 180) {
+            // Give a very, very small nudge towards the player
+            let dist = Math.hypot(player.x - partner.x, player.y - partner.y);
+            if (dist > 0) { // Avoid division by zero
+                partner.x += (player.x - partner.x) / dist * 0.3; // Tiny velocity
+                partner.y += (player.y - partner.y) / dist * 0.3;// Tiny velocity
+            }
+            // Set timer to null so this hint logic never runs again
+            act2HintTimer = null;
+        }
+    }
+// --- Partner Movement & Trust Logic ---
+            let distToPlayer = Math.hypot(player.x - partner.x, player.y - partner.y);// Current distance to player
+            let playerSpeed = Math.hypot(player.targetX - player.x, player.targetY - player.y);// How fast the player is moving
+            // Trust affects how closely she follows
+            if (distToPlayer < 150 && playerSpeed > 2 && partner.trust > 0) {
+                 partner.trust -= 0.05;
+            } else if (distToPlayer < 250) {
+                partner.targetX = player.x + (partner.x - player.x) / distToPlayer * 80;// Stay a bit away from player
+                partner.targetY = player.y + (partner.y - player.y) / distToPlayer * 80;// Stay a bit away from player
+                if (partner.trust < 1) partner.trust += 0.001;// Slowly regain trust when close
+            } else {
+                 partner.wanderAngle += (Math.random() - 0.5) * 0.3;// Randomly change wander direction
+                 partner.targetX = partner.x + Math.cos(partner.wanderAngle) * 2;// Wander further when far away
+                 partner.targetY = partner.y + Math.sin(partner.wanderAngle) * 2;// Wander further when far away
+            }
+            partner.x += (partner.targetX - partner.x) * partner.speed * (0.5 + partner.trust * 0.5);// Trust affects speed
+            partner.y += (partner.targetY - partner.y) * partner.speed * (0.5 + partner.trust * 0.5);// Trust affects speed
+            // Clamp alpha based on trust
+            drawOrb(partner);
+            // --- Fragment Interaction Logic ---
+            let allActivated = true;
+            fragments.forEach(f => {
+                let distPlayer = Math.hypot(player.x - f.x, player.y - f.y);// Distance from player to fragment
+                let distPartner = Math.hypot(partner.x - f.x, partner.y - f.y);// Distance from partner to fragment
+                // Check if BOTH orbs are near the fragment
+                if (distPlayer < player.radius + f.radius && distPartner < partner.radius + f.radius && !f.isActivated) {
+                    f.isActivated = true;// Activate fragment
+                    partner.trust += 0.1;// Increase trust
+                        partner.alpha = Math.min(1.0, partner.alpha + 0.13);// Brighten her up
+                    createParticles(f.x, f.y, 'rgba(255, 219, 222, 1)', 25);
+                }
+                if (f.isActivated && f.alpha < 1.0) f.alpha += 0.01;// Fade in activated fragments
+                if (!f.isActivated) allActivated = false;// Check if all are activated
+
+                // Draw fragment
+                ctx.fillStyle = f.isActivated ? `rgba(255, 219, 222, ${f.alpha})` : `rgba(255, 255, 255, ${f.alpha})`;// Activated fragments are a soft pink
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);// Draw circle
+                ctx.fill();// Fill circle
+            });
+            
+            if (allActivated) transitionToAct3();// Move to next act
+        }
+        
+        function updateAct3() { // Or upda/teAct4_constellations()
+    const stopDistance = 120; // This is the distance at which she will stop.
+const distToPlayer = Math.hypot(player.x - partner.x, player.y - partner.y);// Current distance to player
+// If she is farther than the stop distance, she moves normally.
+if (distToPlayer < stopDistance) {
+    // If you are close enough, she follows like a dance
+    partner.x += (player.x - partner.x) * partner.speed;// Follow more closely
+    partner.y += (player.y - partner.y + Math.sin(time * 0.05) * 20) * partner.speed;// Add a gentle vertical wave
+}
+// We always draw her, whether she is moving or not.
+drawOrb(partner);
+
+    let activeTarget = null;// The star that is currently the target
+    let allDone = true;// Flag to check if all stars are activated
+
+    // First, draw the constellation lines that are already completed
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';// Faint white for lines
+    ctx.lineWidth = 0.5;// Thinner lines
+    for (const node of constellations) {
+        if (node.isActivated) {
+            // Find the next node in the same pattern
+            const nextNode = constellations.find(n => n.patternId === node.patternId && n.nodeId === node.nodeId + 1);// Next node in the same pattern
+            if (nextNode) {
+                ctx.beginPath();// Start a new path for each line
+                ctx.moveTo(node.x, node.y);// Move to the current node
+                ctx.lineTo(nextNode.x, nextNode.y);// Draw line to the next node
+                ctx.stroke();// Stroke the line
+            }
+        }
+    }
+
+    // Now, draw the stars and find the active one
+    for (const node of constellations) {
+        if (!node.isActivated) {
+            allDone = false; // If any node isn't activated, we're not done
+        }
+
+        ctx.beginPath();
+        let radius = node.radius;
+        // The target star will pulse
+        if (node.isTarget) {
+            activeTarget = node;// Set the active target
+            radius = node.radius + Math.sin(time * 0.1) * 2;// Pulsing effect
+            ctx.fillStyle = `rgba(255, 255, 255, 1)`; // Bright white
+        } else {
+            ctx.fillStyle = `rgba(255, 255, 255, ${node.isActivated ? 0.8 : 0.3})`;// Activated stars are brighter
+        }
+        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);// Draw the star
+        ctx.fill();// Fill the star
+    }
+
+    // --- The Core Mechanic ---
+    if (activeTarget) {
+        let distPlayer = Math.hypot(player.x - activeTarget.x, player.y - activeTarget.y);// Distance from player to target
+        let distPartner = Math.hypot(partner.x - activeTarget.x, partner.y - activeTarget.y);// Distance from partner to target
+
+        // Check if BOTH orbs are near the target
+        if (distPlayer < player.radius + activeTarget.radius + 15 && distPartner < partner.radius + activeTarget.radius + 15) {
+            activeTarget.isActivated = true;// Activate the star
+            activeTarget.isTarget = false;// Clear the target flag
+            createParticles(activeTarget.x, activeTarget.y, 'rgba(255, 220, 200, 1)', 25, 3);// Sparkle effect
+
+            // Find the next star in the same pattern
+            const nextTarget = constellations.find(n => n.patternId === activeTarget.patternId && n.nodeId === activeTarget.nodeId + 1);// Next node in the same pattern
+            
+            if (nextTarget) {
+                nextTarget.isTarget = true; // Set new target
+            } else {
+                // This constellation is finished, find the first star of the NEXT pattern
+                const nextPatternStart = constellations.find(n => n.patternId === activeTarget.patternId + 1 && n.nodeId === 0);// First node of the next pattern
+                if (nextPatternStart) {
+                    nextPatternStart.isTarget = true;// Set new target
+                }
+            }
+        }
+    }
+
+    if (allDone && gameState === 'act3') { // Check gameState to prevent multiple calls
+        startEpilogue();// Move to epilogue
+    }
+}
+// --- End Scene ---
+
+        function updateEndScene() {
+            if (centralSun.radius < 40) {// Grow until a certain size
+                centralSun.radius += 0.1;// Grow the sun
+                centralSun.alpha = Math.min(1, centralSun.alpha + 0.005);// Fade in
+            }
+            ctx.beginPath();// Draw the central sun
+            ctx.arc(centralSun.x, centralSun.y, centralSun.radius, 0, Math.PI*2);// Full circle
+            ctx.fillStyle = `rgba(255, 245, 200, ${centralSun.alpha})`;// Soft warm color
+            ctx.shadowColor = `rgba(255, 245, 200, 1)`;// Glow color
+            ctx.shadowBlur = 50;// Strong glow
+            ctx.fill();// Fill the sun
+            ctx.shadowBlur = 0;// Reset shadow
+
+            player.x = centralSun.x + 120 * Math.cos(time * 0.01);// Orbit around the sun
+            player.y = centralSun.y + 120 * Math.sin(time * 0.01);// Orbit around the sun
+            drawPlayer();//draw the player
+
+            partner.x = centralSun.x + 120 * Math.cos(time * 0.01 + Math.PI);//orbit opposite side
+            partner.y = centralSun.y + 120 * Math.sin(time * 0.01 + Math.PI);//orbit opposite side
+            drawOrb(partner);//draw the partner
+
+            if (!creditsShown && gameState === 'end') {
+        creditsShown = true; // Set the flag so this only runs once
+        // Wait 3 seconds before fading the credits in
+        setTimeout(() => {
+            credits.classList.remove('hidden');// Fade in credits
+        }, 3000);// 3 second delay
+    }
+        }
+
+        window.addEventListener('resize', () => {// Handle window resize
+            width = canvas.width = window.innerWidth;// Adjust canvas size on window resize
+            height = canvas.height = window.innerHeight;// Adjust canvas size on window resize
+            centralSun.x = width/2; centralSun.y = height/2;// Center the sun
+            dark.x = width - 100; dark.y = height - 100;
+        });
+        
+        window.addEventListener('click', startGame, { once: true });
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        //event listener for creating sparks on click
+        window.addEventListener('click', createClickSparks);
+        
+        init();
+
+    </script>
+</body>
+</html>
