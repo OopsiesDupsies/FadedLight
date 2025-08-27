@@ -127,7 +127,9 @@
         // --- Game Objects ---
         const player = {
             x: width / 2, y: height / 2, radius: 8, color: '#FFFFFF',
-            targetX: width / 2, targetY: height / 2, speed: 0.04, flicker: 0
+            targetX: width / 2, targetY: height / 2, speed: 0.04, flicker: 0,
+            velocityX: 0,
+            velocityY: 0  
         };
         const partner = {
             x: -200, y: -200, radius: 7, color: 'rgba(255, 179, 186, 0.8)',
@@ -168,8 +170,14 @@
             }, duration);
         }
 
-        // This function now starts the NEW prologue
+        // this new universal start function
 function startGame() {
+    if (gameState !== 'title') return; // Prevent it from running more than once
+    initializePrologue();
+}
+
+        // This function now starts the prologue
+function initializePrologue() {
     if (gameState !== 'title') return;
     gameState = 'starting';
 
@@ -395,12 +403,24 @@ if (gameState === 'act2' || gameState === 'interlude1') {
             });
         }
         // --- Player & Orb Functions ---
-        function updatePlayer() {
-            player.targetX = mouse.x;
-            player.targetY = mouse.y;
-            player.x += (player.targetX - player.x) * player.speed;
-            player.y += (player.targetY - player.y) * player.speed;
+function updatePlayer() {
+    // Apply the current velocity to the player's position
+    player.x += player.velocityX;
+    player.y += player.velocityY;
+
+    // Apply friction so the orb slows down when not being pushed
+    player.velocityX *= 0.95;
+    player.velocityY *= 0.95;
+
+    // This part is for the mouse control
+    if (!isDragging) {
+        let distToMouse = Math.hypot(mouse.x - player.x, mouse.y - player.y);
+        if (distToMouse > 1) {
+            player.x += (mouse.x - player.x) * player.speed;
+            player.y += (mouse.y - player.y) * player.speed;
         }
+    }
+}
 // --- Drawing Functions player ---
         function drawPlayer() {
             player.flicker = (Math.sin(time * 0.1) * 0.15) + 0.85; // 0.7 to 1.0
@@ -695,6 +715,85 @@ drawOrb(partner);
 
         //event listener for creating sparks on click
         window.addEventListener('click', createClickSparks);
+
+        // --- NEW VIRTUAL JOYSTICK AND TOUCH SUPPORT ---
+
+// Variables to keep track of the touch state
+let touchStartX = 0;
+let touchStartY = 0;
+let touchStartTime = 0;
+let isDragging = false;
+
+// Listen for the moment a finger first touches the screen
+window.addEventListener('touchstart', (e) => {
+    startGame();
+
+    // This prevents the page from scrolling, which is crucial for a game
+    e.preventDefault();
+
+    isDragging = true;
+    const touch = e.touches[0]; // Get information about the first finger
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchStartTime = Date.now(); // Record when the touch started for tap detection
+}, { passive: false });
+
+// Listen for when the finger moves across the screen
+window.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!isDragging) return;
+
+    const touch = e.touches[0];
+    const maxDistance = 100; // The max joystick radius in pixels
+    const maxSpeed = 3; // The top speed of the orb
+
+    // Calculate the vector from the start touch to the current finger position
+    let deltaX = touch.clientX - touchStartX;
+    let deltaY = touch.clientY - touchStartY;
+    
+    // Calculate the actual distance the finger has moved
+    let distance = Math.hypot(deltaX, deltaY);
+
+    // Cap the distance to our max joystick radius
+    if (distance > maxDistance) {
+        deltaX = (deltaX / distance) * maxDistance;
+        deltaY = (deltaY / distance) * maxDistance;
+        distance = maxDistance;
+    }
+
+    // Calculate the speed based on how far the finger is from the start point
+    const speed = (distance / maxDistance) * maxSpeed;
+    
+    // Update the player's velocity based on the direction and speed
+    player.velocityX = (deltaX / distance) * speed;
+    player.velocityY = (deltaY / distance) * speed;
+
+}, { passive: false });
+
+// Listen for when the finger is lifted off the screen
+window.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    
+    const duration = Date.now() - touchStartTime;
+    const endTouch = e.changedTouches[0];
+    const distance = Math.hypot(endTouch.clientX - touchStartX, endTouch.clientY - touchStartY);
+
+    // --- Tap vs. Drag Detection ---
+    // If the touch was very short and the finger didn't move much, it's a tap!
+    if (duration < 200 && distance < 10) {
+        createClickSparks();
+    }
+
+    // Reset the joystick state
+    isDragging = false;
+    // We don't reset velocity here, the friction in updatePlayer will handle the slowdown.
+});
+
+// Also listen for a cancelled touch, just in case
+window.addEventListener('touchcancel', (e) => {
+    isDragging = false;
+});
+
         
         init();
 
