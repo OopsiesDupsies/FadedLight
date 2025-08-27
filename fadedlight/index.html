@@ -117,7 +117,7 @@
         const storySubtitle = document.getElementById('storySubtitle');
         const credits = document.getElementById('credits');
 
-
+        let controlMode = 'mouse'; 
         let width = canvas.width = window.innerWidth;
         let height = canvas.height = window.innerHeight;
 
@@ -404,16 +404,15 @@ if (gameState === 'act2' || gameState === 'interlude1') {
         }
         // --- Player & Orb Functions ---
 function updatePlayer() {
-    // Apply the current velocity to the player's position
+    // This part is always active: apply velocity and friction
     player.x += player.velocityX;
     player.y += player.velocityY;
-
-    // Apply friction so the orb slows down when not being pushed
     player.velocityX *= 0.95;
     player.velocityY *= 0.95;
 
-    // This part is for the mouse control
-    if (!isDragging) {
+    // This part depends on the control mode
+    // It only runs if the control mode is 'mouse' AND the player is not actively dragging.
+    if (controlMode === 'mouse' && !isDragging) {
         let distToMouse = Math.hypot(mouse.x - player.x, mouse.y - player.y);
         if (distToMouse > 1) {
             player.x += (mouse.x - player.x) * player.speed;
@@ -706,7 +705,11 @@ drawOrb(partner);
             dark.x = width - 100; dark.y = height - 100;
         });
         
-        window.addEventListener('click', startGame, { once: true });
+window.addEventListener('click', () => {
+    // This is the first click, so set the control mode to 'mouse'.
+    controlMode = 'mouse';
+    startGame();
+}, { once: true });
 
         window.addEventListener('mousemove', (e) => {
             mouse.x = e.clientX;
@@ -726,6 +729,7 @@ let isDragging = false;
 
 // Listen for the moment a finger first touches the screen
 window.addEventListener('touchstart', (e) => {
+    controlMode = 'touch';
     startGame();
 
     // This prevents the page from scrolling, which is crucial for a game
